@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>📊 Калькулятор тарифов</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+        .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 1rem 0; }
+        label { display: block; margin: 0.5rem 0 0.25rem; font-weight: 500; }
+        input, select { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
+        button { background: #2563eb; color: white; padding: 0.75rem 1.5rem; border: none; border-radius: 6px; cursor: pointer; margin-top: 1rem; }
+        button:hover { background: #1d4ed8; }
+        .results { margin-top: 2rem; padding: 1rem; background: #f8fafc; border-radius: 8px; display: none; }
+        .results.show { display: block; }
+        .metric { display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px dashed #e2e8f0; }
+        .metric:last-child { border-bottom: none; }
+        .metric-value { font-weight: 600; color: #1e293b; }
+        #plot { max-width: 100%; margin-top: 1rem; border-radius: 8px; }
+        .error { color: #dc2626; margin-top: 1rem; display: none; }
+        .error.show { display: block; }
+    </style>
+</head>
+<body>
+    <h1>📊 Калькулятор страховых тарифов</h1>
+    
+    <form id="calcForm">
+        <div class="form-grid">
+            <div>
+                <label>Предприятий (N)</label>
+                <input type="number" name="n_enterprises" value="100" min="1" max="10000" required>
+            </div>
+            <div>
+                <label>λ (интенсивность)</label>
+                <input type="number" name="lam" value="0.01" step="0.001" min="0.001" max="1" required>
+            </div>
+            <div>
+                <label>Срок, лет (T)</label>
+                <input type="number" name="term_years" value="10" min="1" max="50" required>
+            </div>
+            <div>
+                <label>Макс. ответственность, руб.</label>
+                <input type="number" name="s_max" value="100000000" min="1" required>
+            </div>
+            <div>
+                <label>Надежность</label>
+                <input type="number" name="reliability" value="0.95" step="0.01" min="0.5" max="0.999" required>
+            </div>
+            <div>
+                <label>Нагрузка, %</label>
+                <input type="number" name="loading" value="0.2" step="0.01" min="0" max="0.99" required>
+            </div>
+            <div>
+                <label>Дисконт, %</label>
+                <input type="number" name="discount_rate" value="0.05" step="0.01" min="0" max="0.2" required>
+            </div>
+            <div>
+                <label>Модель</label>
+                <select name="use_discounting">
+                    <option value="false">Модель 1 (без дисконта)</option>
+                    <option value="true">Модель 2 (с дисконтом)</option>
+                </select>
+            </div>
+        </div>
+        <button type="submit">🔄 Рассчитать</button>
+    </form>
+
+    <div class="error" id="errorMsg"></div>
+
+    <div class="results" id="results">
+        <h3>📋 Результаты</h3>
+        <div class="metric"><span>Начальный капитал (резерв):</span><span class="metric-value" id="res_capital"></span></div>
+        <div class="metric"><span>Нетто-тариф:</span><span class="metric-value" id="res_net"></span></div>
+        <div class="metric"><span>Брутто-тариф:</span><span class="metric-value" id="res_gross"></span></div>
+        <div class="metric" id="row_better" style="display:none"><span>Рекомендация:</span><span class="metric-value" id="res_better"></span></div>
+        <div class="metric" id="row_savings" style="display:none"><span>Экономия:</span><span class="metric-value" id="res_savings"></span></div>
+        <img id="plot" alt="График распределения">
+    </div>
+
+    <script>
+    document.getElementById('calcForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        const data = {
+            n_enterprises: +form.n_enterprises.value,
+            lam: +form.lam.value,
+            term_years: +form.term_years.value,
+            s_max: +form.s_max.value,
+            reliability: +form.reliability.value,
+            loading: +form.loading.value,
+            discount_rate: +form.discount_rate.value,
+            use_discounting: form.use_discounting.value === 'true'
+        };
+
+        const btn = form.querySelector('button');
+        btn.disabled = true;
+        btn.textContent = '⏳ Расчёт...';
+        document.getElementById('errorMsg').classList.remove('show');
+        document.getElementById('results').classList.remove('show');
+
+        try {
+            const resp = await fetch('/api/calculate-with-plot', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+            const json = await resp.json();
+            
+            if (!resp.ok) throw new Error(json.detail || 'Ошибка сервера');
+            
+            const r = json.data;
+            document.getElementById('res_capital').textContent = new Intl.NumberFormat('ru-RU', {style: 'currency', currency: 'RUB', maximumFractionDigits: 0}).format(r.initial_capital);
+            document.getElementById('res_net').textContent = r.net_tariff_percent.toFixed(4) + '%';
+            document.getElementById('res_gross').textContent = r.gross_tariff_percent.toFixed(4) + '%';
+            
+            if (r.better_model) {
+                document.getElementById('res_better').textContent = r.better_model;
+                document.getElementById('res_savings').textContent = r.savings_percent.toFixed(2) + '%';
+                document.getElementById('row_better').style.display = 'flex';
+                document.getElementById('row_savings').style.display = 'flex';
+            }
+            
+            if (json.plot_base64) {
+                document.getElementById('plot').src = 'data:image/png;base64,' + json.plot_base64;
+            }
+            
+            document.getElementById('results').classList.add('show');
+        } catch (err) {
+            document.getElementById('errorMsg').textContent = '❌ ' + err.message;
+            document.getElementById('errorMsg').classList.add('show');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '🔄 Рассчитать';
+        }
+    });
+    </script>
+</body>
+</html>
