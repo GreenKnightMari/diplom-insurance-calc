@@ -1,21 +1,21 @@
 # main.py
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse  # <-- Важно!
 from calculator import TariffInput, calculate_tariffs
 
-app = FastAPI(title="Калькулятор страховых тарифов")
+app = FastAPI(title="Калькулятор")
 
-# Подключаем папку со статикой (CSS, JS, картинки)
+# Подключение статики
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Главная страница: отдаём index.html при заходе на /
+# ГЛАВНАЯ СТРАНИЦА (этого раньше не было)
 @app.get("/")
 def read_root():
     return FileResponse("static/index.html")
 
-# API-эндпоинт для расчёта
+# API для расчёта
 @app.post("/api/calculate")
-def calculate(data: TariffInput):
+def calculate( TariffInput):
     result = calculate_tariffs(data)
     return {"status": "ok", "data": result}
